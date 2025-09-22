@@ -232,10 +232,10 @@ The app includes comprehensive functionality tests that run on launch:
 - Ensure device is not in silent mode
 - Verify audio session configuration
 
-#### **"OpenAI API key missing"**
-- Verify environment variable is set correctly
-- Check API key validity
-- Ensure network connectivity
+#### **"Google Speech API key missing"**
+- Verify GOOGLE_SPEECH_API_KEY environment variable is set correctly
+- Check API key validity in Google Cloud Console
+- Ensure Speech-to-Text API is enabled
 
 #### **"Siri not responding"**
 - Check Siri capability in project settings
@@ -264,7 +264,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- **OpenAI** for the Whisper API
+- **Google Cloud** for the Speech-to-Text API
 - **Apple** for Speech Framework and SiriKit
 - **SwiftUI** community for UI best practices
 - **iOS Developer Community** for audio processing insights

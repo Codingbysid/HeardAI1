@@ -11,20 +11,15 @@ HeardAI/
 ├── HeardAIApp.swift              # Main app entry point
 ├── HeardAI/
 │   ├── Services/                 # Business logic and external integrations
-│   │   ├── ProperSiriKitService.swift      # Enhanced SiriKit integration
-│   │   ├── RobustWakeWordDetector.swift    # Multi-method wake word detection
-│   │   ├── EnhancedAudioManager.swift      # Integrated audio management
-│   │   ├── AudioFormatConverter.swift      # Proper audio conversion
-│   │   ├── WhisperService.swift            # OpenAI Whisper integration
-│   │   ├── SpeechRecognizer.swift          # On-device speech recognition
-│   │   └── SiriService.swift               # Legacy Siri integration
+│   │   ├── AudioManager.swift            # Core audio processing
+│   │   ├── WhisperService.swift          # Google Speech integration
+│   │   ├── SiriService.swift             # Siri command execution
+│   │   └── SpeechRecognizer.swift        # On-device speech recognition
 │   ├── Views/                    # SwiftUI views and UI components
-│   │   ├── ContentView.swift              # Legacy main view
-│   │   ├── EnhancedContentView.swift      # Enhanced UI with performance monitoring
-│   │   └── UltimateContentView.swift      # Ultimate UI with all features
+│   │   └── ContentView.swift             # Main UI with command confirmation
 │   ├── Utils/                    # Utility classes and helpers
-│   │   ├── PerformanceMonitor.swift       # Real-time performance tracking
-│   │   └── FunctionalityTest.swift        # Comprehensive testing
+│   │   ├── TestRunner.swift              # Diagnostic testing
+│   │   └── FunctionalityTest.swift       # Comprehensive testing
 │   ├── Models/                   # Data models (future use)
 │   ├── Resources/                # Assets and resources
 │   └── Info.plist               # App configuration and permissions
@@ -37,100 +32,79 @@ HeardAI/
 
 ## 🔧 Core Services Architecture
 
-### **1. EnhancedAudioManager**
-**Purpose**: Central coordinator for all audio-related operations
+### **1. AudioManager**
+**Purpose**: Core audio processing and wake word detection
 
 **Key Responsibilities**:
 - Manages audio session configuration
-- Coordinates wake word detection
-- Handles command recording
-- Integrates with transcription services
-- Manages battery optimization
+- Handles wake word detection
+- Records user commands
+- Integrates with Google Speech API
+- Manages memory and performance
 
 **Dependencies**:
-- `RobustWakeWordDetector`
-- `ProperSiriKitService`
-- `WhisperService`
-- `SpeechRecognizer`
+- `WhisperService` (Google Speech)
+- `SiriService` (Command execution)
 
 **Key Methods**:
 ```swift
 func startListeningForWakeWord()
 func stopListeningForWakeWord()
 private func processRecordedCommand()
-private func executeCommandWithSiri(_ command: String)
+private func presentCommandForConfirmation(_ transcription: String)
 ```
 
-### **2. RobustWakeWordDetector**
-**Purpose**: Multi-method wake word detection with confidence scoring
-
-**Detection Methods**:
-1. **Speech Recognition**: Uses Apple's Speech Framework
-2. **Pattern Matching**: Audio pattern analysis
-3. **Keyword Spotting**: Machine learning-based detection
+### **2. WhisperService**
+**Purpose**: Google Cloud Speech-to-Text integration for free transcription
 
 **Key Features**:
-- Confidence scoring across multiple methods
-- Noise reduction and adaptive thresholds
-- Battery-aware processing
-- Alternative wake word support
+- Google Speech API integration
+- 60 minutes/month free tier
+- Automatic punctuation
+- Error handling and retry logic
+- Secure API key management
 
 **Key Methods**:
 ```swift
-func startListening()
-func stopListening()
-private func performWakeWordDetection()
-private func combineDetectionResults(_ results: DetectionResult...)
+func transcribeAudio(_ audioData: Data, completion: @escaping (Result<String, Error>) -> Void)
+func transcribeAudioFile(url: URL, completion: @escaping (Result<String, Error>) -> Void)
+private func parseGoogleSpeechResponse(_ data: Data) throws -> String
 ```
 
-### **3. ProperSiriKitService**
-**Purpose**: Full SiriKit integration with proper intent handling
+### **3. SiriService**
+**Purpose**: Siri command execution and intent handling
 
-**Supported Intents**:
-- `INCreateTaskListIntent` (Reminders)
-- `INSendMessageIntent` (Messages)
-- `INStartAudioCallIntent` (Calls)
-- `INSearchForNotebookItemsIntent` (Weather)
-- `INPlayMediaIntent` (Music)
-- `INCreateTimerIntent` (Timers)
-- `INCreateAlarmIntent` (Alarms)
+**Supported Commands**:
+- Reminders (URL scheme)
+- Messages (Siri integration)
+- Calls (Siri integration)
+- Weather (Siri integration)
+- Music (Siri integration)
+- Timers (Siri integration)
+- Alarms (Siri integration)
 - General commands (URL scheme)
 
 **Key Methods**:
 ```swift
 func executeCommand(_ command: String)
 private func parseCommand(_ command: String) -> SiriCommandType
-private func presentIntent(_ intent: INIntent, completion: @escaping (Bool) -> Void)
+private func openSiriWithCommand(_ command: String)
 ```
 
-### **4. AudioFormatConverter**
-**Purpose**: Converts audio data to Whisper API compatible format
+### **4. SpeechRecognizer**
+**Purpose**: On-device speech recognition for fallback
 
 **Key Features**:
-- Proper WAV header generation
-- 16-bit PCM conversion
-- Whisper API compatibility
-- Memory-efficient processing
+- Apple Speech Framework integration
+- Offline capability
+- Real-time processing
+- Privacy-focused
 
 **Key Methods**:
 ```swift
-static func convertToWAV(audioBuffer: Data, sampleRate: Double, channels: Int) throws -> Data
-static func convertFloatToInt16(_ floatData: Data) -> Data
-```
-
-### **5. WhisperService**
-**Purpose**: OpenAI Whisper API integration for high-accuracy transcription
-
-**Key Features**:
-- Multipart form data handling
-- Error handling and retry logic
-- Secure API key management
-- Response parsing
-
-**Key Methods**:
-```swift
-func transcribeAudio(_ audioData: Data, completion: @escaping (Result<String, Error>) -> Void)
-func transcribeAudioFile(url: URL, completion: @escaping (Result<String, Error>) -> Void)
+func startListening()
+func stopListening()
+private func processAudioBuffer(_ buffer: AVAudioPCMBuffer)
 ```
 
 ## 🎨 UI Architecture

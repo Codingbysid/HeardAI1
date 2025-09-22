@@ -72,5 +72,7 @@
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <key>GOOGLE_SPEECH_API_KEY</key>
+    <string>0ac4a773d6788813e45539a3ee8c4bdf6767faa8</string>
 </dict>
 </plist>

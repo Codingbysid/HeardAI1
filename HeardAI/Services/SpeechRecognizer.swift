@@ -102,15 +102,26 @@ class SpeechRecognizer: ObservableObject {
     }
     
     func stopListening() {
-        audioEngine?.stop()
-        audioEngine?.inputNode.removeTap(onBus: 0)
+        // Safely stop audio engine
+        if let audioEngine = audioEngine, audioEngine.isRunning {
+            audioEngine.stop()
+            // Safely remove tap
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
+        
+        // Cancel recognition task
         recognitionTask?.cancel()
         recognitionTask = nil
         recognitionRequest = nil
+        
+        // Reset references
         audioEngine = nil
         
+        // Reset state
         isListening = false
         isTranscribing = false
+        
+        print("Speech recognizer resources cleaned up successfully")
     }
     
     func transcribeAudioFile(url: URL, completion: @escaping (Result<String, Error>) -> Void) {

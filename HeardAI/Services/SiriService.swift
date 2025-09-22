@@ -1,6 +1,7 @@
 import Foundation
 import Intents
 import IntentsUI
+import UIKit
 
 class SiriService: ObservableObject {
     @Published var isExecuting = false
@@ -12,9 +13,17 @@ class SiriService: ObservableObject {
             self.error = nil
         }
         
-        // Create a custom intent for Siri
-        let intent = INSendMessageIntent()
-        intent.content = command
+        // Create a custom intent for Siri (for future SiriKit integration)
+        _ = INSendMessageIntent(
+            recipients: nil,
+            outgoingMessageType: .outgoingMessageText,
+            content: command,
+            speakableGroupName: nil,
+            conversationIdentifier: nil,
+            serviceName: nil,
+            sender: nil,
+            attachments: nil
+        )
         
         // For the MVP, we'll use a simplified approach
         // In production, you would use SiriKit with proper intent handling
@@ -49,15 +58,73 @@ class SiriService: ObservableObject {
     }
     
     func executeCommand(_ command: String) {
-        // This is a simplified implementation for the MVP
-        // In a full implementation, you would:
-        // 1. Parse the command to determine the intent
-        // 2. Create the appropriate SiriKit intent
-        // 3. Present the intent to Siri
+        DispatchQueue.main.async {
+            self.isExecuting = true
+            self.error = nil
+        }
         
         print("Executing Siri command: \(command)")
         
-        // For now, we'll just open Siri with the command
+        // Parse command and execute appropriate action
+        let commandType = parseCommand(command)
+        
+        switch commandType {
+        case .reminder:
+            executeReminderCommand(command)
+        case .message:
+            executeMessageCommand(command)
+        case .call:
+            executeCallCommand(command)
+        case .weather:
+            openSiriWithCommand(command)
+        case .music:
+            openSiriWithCommand(command)
+        case .timer:
+            executeTimerCommand(command)
+        case .alarm:
+            executeAlarmCommand(command)
+        case .general:
+            openSiriWithCommand(command)
+        }
+    }
+    
+    private func executeReminderCommand(_ command: String) {
+        // Extract reminder content and use Siri URL scheme
+        let reminderText = command.replacingOccurrences(of: "remind me to ", with: "")
+                                  .replacingOccurrences(of: "set reminder ", with: "")
+        let encodedText = reminderText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? reminderText
+        
+        if let url = URL(string: "x-apple-reminderkit://REMCDReminder/\(encodedText)") {
+            UIApplication.shared.open(url) { [weak self] success in
+                DispatchQueue.main.async {
+                    self?.isExecuting = false
+                    if !success {
+                        self?.openSiriWithCommand(command)
+                    }
+                }
+            }
+        } else {
+            openSiriWithCommand(command)
+        }
+    }
+    
+    private func executeMessageCommand(_ command: String) {
+        // Use Siri for message commands
+        openSiriWithCommand(command)
+    }
+    
+    private func executeCallCommand(_ command: String) {
+        // For now, use Siri as it handles contact resolution better
+        openSiriWithCommand(command)
+    }
+    
+    private func executeTimerCommand(_ command: String) {
+        // Use Siri for timer commands as it handles natural language well
+        openSiriWithCommand(command)
+    }
+    
+    private func executeAlarmCommand(_ command: String) {
+        // Use Siri for alarm commands as it handles natural language well
         openSiriWithCommand(command)
     }
 }
@@ -89,5 +156,7 @@ enum SiriCommandType {
     case call
     case weather
     case music
+    case timer
+    case alarm
     case general
 }
