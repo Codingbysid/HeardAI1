@@ -31,6 +31,9 @@ class AudioManager: ObservableObject {
     /// Current audio input level (0.0 to 1.0) for visual feedback
     @Published var audioLevel: Float = 0.0
     
+    /// Current error message, if any
+    @Published var error: String?
+    
     // MARK: - Private Properties
     
     /// Core audio engine for capturing microphone input
@@ -47,6 +50,12 @@ class AudioManager: ObservableObject {
     
     /// Speech recognizer configured for US English
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    
+    /// Real wake word detector using Apple's Speech framework
+    private let wakeWordDetector = WakeWordDetector()
+    
+    /// Combine cancellables for managing subscriptions
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Configuration Constants
     
@@ -113,28 +122,27 @@ class AudioManager: ObservableObject {
         print("🎤 Starting wake word detection...")
         print("🎯 Listening for: '\(wakeWord)'")
         
-        audioEngine = AVAudioEngine()
-        inputNode = audioEngine?.inputNode
+        // Clear any previous errors
+        error = nil
         
-        guard let inputNode = inputNode else { 
-            print("🔴 Failed to get audio input node")
-            return 
+        // Use real wake word detection instead of simulated
+        wakeWordDetector.startDetection { [weak self] in
+            self?.wakeWordDetected()
         }
         
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        print("🎵 Audio format: \(recordingFormat)")
+        // Monitor for errors from wake word detector
+        wakeWordDetector.$error
+            .compactMap { $0 }
+            .sink { [weak self] errorMessage in
+                DispatchQueue.main.async {
+                    self?.error = "Wake word detection error: \(errorMessage)"
+                    print("🔴 Wake word detection error: \(errorMessage)")
+                }
+            }
+            .store(in: &cancellables)
         
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            self?.processAudioBuffer(buffer)
-        }
-        
-        do {
-            try audioEngine?.start()
-            isListening = true
-            print("✅ Started listening for wake word: '\(wakeWord)'")
-        } catch {
-            print("🔴 Failed to start audio engine: \(error)")
-        }
+        isListening = true
+        print("✅ Started real wake word detection")
     }
     
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
@@ -161,7 +169,7 @@ class AudioManager: ObservableObject {
         
         // If we're recording a command, don't check for wake word
         if isRecordingCommand {
-            print("🎙️ Recording command... (buffer size: \(audioBuffer.count) bytes)")
+            print("🎙️ Recording command... (buffer size: \(audioBuffer.count) bytes, level: \(average))")
             return
         }
         
@@ -222,19 +230,21 @@ class AudioManager: ObservableObject {
     
     
     private func wakeWordDetected() {
+        print("✅ Wake word detected - transitioning to command recording")
         isWakeWordDetected = true
-        isListening = false
-        stopListeningForWakeWord()
         
-        // Start recording the command
+        // Don't call stopListeningForWakeWord() here - we'll transition directly
+        // Start recording the command immediately
         startRecordingCommand()
     }
     
     private func startRecordingCommand() {
         print("🎙️ Starting command recording...")
         isRecordingCommand = true
-        isListening = true
         audioBuffer.removeAll()
+        
+        // Reinitialize audio engine for command recording
+        setupAudioEngineForCommandRecording()
         
         // Start a timer to record for 5 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
@@ -242,15 +252,96 @@ class AudioManager: ObservableObject {
         }
     }
     
+    private func setupAudioEngineForCommandRecording() {
+        // Stop wake word detection first
+        wakeWordDetector.stopDetection()
+        
+        // Clean up any existing engine safely
+        if let audioEngine = audioEngine, audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        
+        if let inputNode = inputNode {
+            inputNode.removeTap(onBus: 0)
+        }
+        
+        // Wait a moment for cleanup to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.startCommandRecordingEngine()
+        }
+    }
+    
+    private func startCommandRecordingEngine() {
+        // Create new audio engine for command recording
+        audioEngine = AVAudioEngine()
+        inputNode = audioEngine?.inputNode
+        
+        guard let inputNode = inputNode else {
+            print("🔴 Failed to get audio input node for command recording")
+            return
+        }
+        
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        print("🎵 Command recording format: \(recordingFormat)")
+        
+        // Install tap for command recording
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            self?.processCommandAudioBuffer(buffer)
+        }
+        
+        do {
+            try audioEngine?.start()
+            isListening = true
+            print("✅ Audio engine started for command recording")
+        } catch {
+            print("🔴 Failed to start audio engine for command recording: \(error)")
+        }
+    }
+    
+    private func processCommandAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData?[0] else { return }
+        
+        // Calculate audio level for visualization
+        let frameLength = Int(buffer.frameLength)
+        var sum: Float = 0
+        for i in 0..<frameLength {
+            sum += abs(channelData[i])
+        }
+        let average = sum / Float(frameLength)
+        
+        // Update audio level
+        DispatchQueue.main.async {
+            self.audioLevel = average
+        }
+        
+        // Convert buffer to data for command recording
+        let data = Data(bytes: channelData, count: frameLength * MemoryLayout<Float>.size)
+        audioBuffer.append(data)
+        
+        print("🎙️ Recording command audio... (buffer size: \(audioBuffer.count) bytes, level: \(average))")
+    }
+    
     private func stopRecordingCommand() {
+        print("🛑 Stopping command recording")
         isRecordingCommand = false
         isWakeWordDetected = false
+        
+        // Stop the current audio engine
+        if let audioEngine = audioEngine, audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        
+        if let inputNode = inputNode {
+            inputNode.removeTap(onBus: 0)
+        }
         
         // Process the recorded command
         processRecordedCommand()
         
-        // Resume listening for wake word
-        startListeningForWakeWord()
+        // Resume listening for wake word after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.startListeningForWakeWord()
+        }
     }
     
     private func processRecordedCommand() {
@@ -260,12 +351,50 @@ class AudioManager: ObservableObject {
         }
         
         print("🎤 Processing recorded command - buffer size: \(audioBuffer.count) bytes")
+        print("⏱️ Command recording completed at: \(Date())")
         
-        // For now, use a simplified approach since AudioFormatConverter is not in the build
-        // In a complete implementation, we would convert the audio to proper format
+        // Convert audio to proper format for Google Speech API
+        guard let inputFormat = inputNode?.outputFormat(forBus: 0) else {
+            let errorMsg = "Failed to get input audio format"
+            print("🔴 \(errorMsg)")
+            DispatchQueue.main.async {
+                self.error = errorMsg
+            }
+            return
+        }
         
-        // Create a simple WAV-like data structure
-        let wavData = createWAVFormattedData(from: audioBuffer)
+        // Create audio buffer from recorded data
+        guard let audioBuffer = createAudioBuffer(from: audioBuffer, format: inputFormat) else {
+            let errorMsg = "Failed to create audio buffer from recorded data"
+            print("🔴 \(errorMsg)")
+            DispatchQueue.main.async {
+                self.error = errorMsg
+            }
+            return
+        }
+        
+        // Convert to Google Speech API format
+        guard let wavData = AudioFormatConverter.convertForGoogleSpeech(
+            buffer: audioBuffer,
+            inputFormat: inputFormat
+        ) else {
+            let errorMsg = "Failed to convert audio format for Google Speech API"
+            print("🔴 \(errorMsg)")
+            DispatchQueue.main.async {
+                self.error = errorMsg
+            }
+            return
+        }
+        
+        // Validate audio quality
+        guard AudioFormatConverter.validateAudioQuality(wavData) else {
+            let errorMsg = "Audio quality insufficient for speech recognition"
+            print("🔴 \(errorMsg)")
+            DispatchQueue.main.async {
+                self.error = errorMsg
+            }
+            return
+        }
         
         // Send to Google Speech API for transcription
         let speechService = WhisperService()
@@ -293,6 +422,33 @@ class AudioManager: ObservableObject {
             object: nil,
             userInfo: ["transcription": transcription]
         )
+    }
+    
+    /// Creates an audio buffer from recorded data
+    /// - Parameters:
+    ///   - data: Recorded audio data
+    ///   - format: Audio format to use
+    /// - Returns: AVAudioPCMBuffer or nil if creation fails
+    private func createAudioBuffer(from data: Data, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let frameCount = data.count / MemoryLayout<Float>.size
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount)) else {
+            return nil
+        }
+        
+        buffer.frameLength = AVAudioFrameCount(frameCount)
+        
+        guard let channelData = buffer.floatChannelData?[0] else {
+            return nil
+        }
+        
+        data.withUnsafeBytes { bytes in
+            let floatData = bytes.bindMemory(to: Float.self)
+            for i in 0..<frameCount {
+                channelData[i] = floatData[i]
+            }
+        }
+        
+        return buffer
     }
     
     /// Creates a basic WAV file header and data structure from raw audio buffer
@@ -356,6 +512,9 @@ class AudioManager: ObservableObject {
             isRecordingCommand = false
         }
         
+        // Stop wake word detection
+        wakeWordDetector.stopDetection()
+        
         // Safely clean up audio engine resources
         if let audioEngine = audioEngine, audioEngine.isRunning {
             audioEngine.stop()
@@ -379,7 +538,7 @@ class AudioManager: ObservableObject {
         inputNode = nil
         isListening = false
         
-        print("Basic audio resources cleaned up successfully")
+        print("✅ Audio resources cleaned up successfully")
     }
 }
 
