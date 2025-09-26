@@ -133,7 +133,7 @@ class AudioManager: ObservableObject {
         // Monitor for errors from wake word detector
         wakeWordDetector.$error
             .compactMap { $0 }
-            .sink { [weak self] errorMessage in
+            .sink { [weak self] (errorMessage: String) in
                 DispatchQueue.main.async {
                     self?.error = "Wake word detection error: \(errorMessage)"
                     print("🔴 Wake word detection error: \(errorMessage)")
